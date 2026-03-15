@@ -17,6 +17,13 @@ struct Memory {
 	}
 	Byte operator[](u32 Address) const { return Data[Address]; } // read one slot i.e byte
 	Byte& operator[](u32 Address) { return Data[Address]; }      //  write one slot i.e byte
+	// write 2 bytes
+	void writeWord(Word dataToWrite, u32 address, u32& ticks)
+	{
+		Data[address] = dataToWrite & 0xFF;
+		Data[address + 1] = (dataToWrite >> 8);
+		ticks -= 2;
+	}
 };
 
 struct CPU {
@@ -34,8 +41,10 @@ struct CPU {
 	Byte N : 1;
 
 	// opcodes
-	static constexpr Byte INS_LDA_IM = 0xA9; // load data into accumulaotr immediately
-	static constexpr Byte INS_LDA_ZP = 0xA5; // load data into accumulator zero-page
+	static constexpr Byte INS_LDA_IM = 0xA9;  // load data into accumulaotr immediately
+	static constexpr Byte INS_LDA_ZP = 0xA5;  // load data into accumulator zero-page
+	static constexpr Byte INS_LDA_ZPX = 0xB5; // load data to accumulator from zero-page
+	static constexpr Byte INS_JSR = 0x20;     // Jump to subroutine
 
 	void LDASetStatus()
 	{
@@ -67,7 +76,15 @@ struct CPU {
 		ticks--;
 		return Data;
 	}
-
+	Word fetchWord(u32& ticks, Memory& mem)
+	{
+		// little endian
+		Word Data = mem[PC];
+		PC++;
+		Data |= (mem[PC] << 8);
+		ticks += 2;
+		return Data;
+	}
 	void Execute(u32 ticks, Memory& mem)
 	{
 		while (ticks > 0) {
@@ -86,6 +103,21 @@ struct CPU {
 					LDASetStatus();
 				} break;
 
+				case INS_LDA_ZPX: {
+					Byte ZeroPageAddress = fetchByte(ticks, mem);
+					ZeroPageAddress += X;
+					ticks--;
+					A = readByte(ticks, ZeroPageAddress, mem);
+					LDASetStatus();
+				} break;
+				case INS_JSR: {
+					Word subAddr = fetchWord(ticks, mem);
+					mem.writeWord(PC - 1, SP, ticks);
+					mem[SP] = PC - 1;
+					ticks--;
+					PC = subAddr;
+					ticks--;
+				} break;
 				default: {
 					printf("Instruction not handled %d", ins);
 				} break;
@@ -100,9 +132,11 @@ int main()
 	Memory memory;
 	cpu.reset(memory);
 
+	// test code - little inline program - start
 	memory[0xFFC] = CPU::INS_LDA_IM;
 	memory[0xFFD] = 0x42;
 
+	// end
 	cpu.Execute(2, memory);
 	return 0;
 }
